@@ -2,49 +2,72 @@ $now = Get-Date "2024-10-14 23:59:59"
 $weekAgo = $now.AddDays(-7)
 $regex = '\b(20\d{2}-\d{2}-\d{2})(?:\s+([0-2]\d:[0-5]\d(?::[0-5]\d)?))?\b'
 
-Get-ChildItem -Path 'network_configs' -Recurse -File |
-Where-Object { $_.Extension -in '.conf', '.rules', '.log' } |
-Select-Object Name,
-@{Name = 'SizeKB'; Expression = { [math]::Round($_.Length / 1KB, 2) } },
-LastWriteTime |
-Export-Csv -Path .\1_config_files.csv -NoTypeInformation -Encoding UTF8
+function Get-ParsedDateFromFile {
+    param([string]$Path)
 
-Get-ChildItem -Path 'network_configs' -Recurse -File |
-ForEach-Object {
-    $f = $_
-    $matches = Select-String -Path $f.FullName -Pattern $regex -AllMatches
-    if (-not $matches) { return }
+    $matches = Select-String -Path $Path -Pattern $regex -AllMatches -ErrorAction SilentlyContinue
+    if (-not $matches) { return $null }
 
-    $dates = foreach ($hit in $matches) {
+    $parsedDates = foreach ($hit in $matches) {
         foreach ($m in $hit.Matches) {
-            $datePart = $m.Groups[1].Value
-            $timePart = $m.Groups[2].Value
-
-            if ($timePart) {
-                foreach ($fmt in @('yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd HH:mm')) {
-                    try { 
-                        $dt = [datetime]::ParseExact("$datePart $timePart", $fmt, [System.Globalization.CultureInfo]::InvariantCulture)
-                        break
-                    }
-                    catch { $dt = $null }
+            $txt = $m.Value
+            foreach ($fmt in @('yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd HH:mm', 'yyyy-MM-dd')) {
+                try {
+                    $dt = [datetime]::ParseExact($txt, $fmt, [System.Globalization.CultureInfo]::InvariantCulture)
+                    break
                 }
-                if ($dt) { $dt; continue }
+                catch { $dt = $null }
             }
-
-            try { [datetime]::ParseExact($datePart, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture) } catch { $null }
+            if ($dt) { $dt }
         }
     } Where-Object { $_ -ne $null }
 
-    if ($dates) {
-        $latest = $dates | Sort-Object -Descending | Select-Object -First 1
+    if ($parsedDates) { $parsedDates | Sort-Object -Descending | Select-Object -First 1 } else { $null }
+}
+
+Get-ChildItem -Path 'network_configs' -Recurse -File |
+Where-Object { $_.Extension -in '.conf', '.rules', '.log' } |
+ForEach-Object {
+    $f = $_
+    $parsed = Get-ParsedDateFromFile -Path $f.FullName
+    [PSCustomObject]@{
+        Name       = $f.Name
+        SizeKB     = [math]::Round($f.Length / 1KB, 2)
+        ParsedDate = if ($parsed) { $parsed } else { $f.LastWriteTime }
+    }
+} |
+Where-Object { $_.ParsedDate -and ($_.ParsedDate -ge $weekAgo) -and ($_.ParsedDate -le $now) } |
+Sort-Object ParsedDate -Descending |
+Export-Csv -Path .\1_config_files.csv -NoTypeInformation -Encoding UTF8
+
+Get-ChildItem -Path 'network_configs' -Recurse -File |
+Where-Object { $_.Extension -in '.conf', '.rules', '.log', '.bak' } |
+ForEach-Object {
+    $f = $_
+    $parsed = Get-ParsedDateFromFile -Path $f.FullName
+
+    if ($parsed) {
         [PSCustomObject]@{
             Name       = $f.Name
             SizeKB     = [math]::Round($f.Length / 1KB, 2)
-            ParsedDate = $latest
+            ParsedDate = $parsed
         }
     }
 } |
-Where-Object { $_.ParsedDate.Date -and ($_.ParsedDate -ge $weekAgo) -and ($_.ParsedDate -le $now) } |
+Where-Object { $_.ParsedDate -and ($_.ParsedDate -ge $weekAgo) -and ($_.ParsedDate -le $now) } |
 Sort-Object ParsedDate -Descending |
 Select-Object Name, SizeKB, ParsedDate |
 Export-Csv -Path .\2_last_changed_files.csv -NoTypeInformation -Encoding UTF8
+
+Get-ChildItem -Path 'network_configs' -Recurse -File |
+Where-Object { $_.Extension -in '.conf', '.rules', '.log', '.bak' } |
+Group-Object -Property Extension |
+Select-Object @{
+    Name = 'Extension'; Expression = { $_.Name }
+}, @{
+    Name = 'FileCount'; Expression = { $_.Count }
+}, @{
+    Name = 'TotalSizeKB'; Expression = { [math]::Round( ($_.Group | Measure-Object -Property Length -Sum).Sum / 1KB, 2) }
+} |
+Sort-Object FileCount -Descending |
+Export-Csv -Path .\3_group_files_after_type.csv -NoTypeInformation -Encoding UTF8  
