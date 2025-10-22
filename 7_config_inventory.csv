@@ -1,0 +1,8 @@
+﻿"Name","Fullpath","SizeKB","ParsedDate"
+"FW-DC-01.rules","C:\Users\chril\Desktop\Nätverkstekniker Filer\Scriptspråk\workshop-4-scriptsprak\network_configs\firewalls\FW-DC-01.rules","1,03","2024-10-11 12:00:00"
+"FW-DMZ-01.rules","C:\Users\chril\Desktop\Nätverkstekniker Filer\Scriptspråk\workshop-4-scriptsprak\network_configs\firewalls\FW-DMZ-01.rules","0,86","2024-10-12 09:00:00"
+"RT-EDGE-01.conf","C:\Users\chril\Desktop\Nätverkstekniker Filer\Scriptspråk\workshop-4-scriptsprak\network_configs\routers\RT-EDGE-01.conf","0,83","2024-10-14 08:45:23"
+"RT-EDGE-02.conf","C:\Users\chril\Desktop\Nätverkstekniker Filer\Scriptspråk\workshop-4-scriptsprak\network_configs\routers\RT-EDGE-02.conf","0,58","2024-10-10 14:22:10"
+"RT-LAGER-01.conf","C:\Users\chril\Desktop\Nätverkstekniker Filer\Scriptspråk\workshop-4-scriptsprak\network_configs\routers\RT-LAGER-01.conf","0,59","2024-10-08 11:20:15"
+"SW-CORE-01.conf","C:\Users\chril\Desktop\Nätverkstekniker Filer\Scriptspråk\workshop-4-scriptsprak\network_configs\switches\SW-CORE-01.conf","0,76","2024-10-13 16:30:45"
+"SW-CORE-02.conf","C:\Users\chril\Desktop\Nätverkstekniker Filer\Scriptspråk\workshop-4-scriptsprak\network_configs\switches\SW-CORE-02.conf","0,59","2024-10-09 09:15:30"

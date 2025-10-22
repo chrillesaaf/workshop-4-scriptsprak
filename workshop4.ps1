@@ -137,3 +137,19 @@ Get-ChildItem -Path 'network_configs' -Recurse -File -Filter '*.log' |
 ForEach-Object { Get-KeywordInFile -Path $_.Fullname } |
 Sort-Object TotalHits -Descending |
 Export-Csv -Path .\6_security_problem_counts.csv -NoTypeInformation -Encoding UTF8
+
+#Export fileinventory
+Get-ChildItem -Path 'network_configs' -Recurse -File |
+Where-Object { $_.Extension -in '.conf', '.rules' } |
+ForEach-Object {
+    $f = $_
+    $parsed = Get-ParsedDateFromFile -Path $f.FullName
+    [PSCustomObject]@{
+        Name       = $f.Name
+        Fullpath   = $f.FullName
+        SizeKB     = [math]::Round($f.Length / 1KB, 2)
+        ParsedDate = if ($parsed) { $parsed } else { $f.LastWriteTime }
+    }
+} |
+Where-Object { $_.ParsedDate -and ($_.ParsedDate -ge $weekAgo) -and ($_.ParsedDate -le $now) } |
+Export-Csv -Path .\7_config_inventory.csv -NoTypeInformation -Encoding UTF8
