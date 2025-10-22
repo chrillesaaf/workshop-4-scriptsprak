@@ -26,6 +26,36 @@ function Get-ParsedDateFromFile {
 
     if ($parsedDates) { $parsedDates | Sort-Object -Descending | Select-Object -First 1 } else { $null }
 }
+#Function to count keywords in files
+function Get-KeywordInFile {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string[]]$keywords = @('ERROR', 'FAILED', 'DENIED')
+    )
+
+    $pattern = '(?i)\b(' + ($keywords -join '|') + ')\b'
+    $filematches = Select-String -Path $Path -Pattern $pattern -AllMatches -ErrorAction SilentlyContinue
+    $counts = @{}
+    foreach ($k in $keywords) { $counts[$k.ToUpper()] = 0 }
+
+    if ($filematches) {
+        foreach ($mi in $filematches) {
+            foreach ($m in $mi.Matches) {
+                $val = $m.Value.ToUpper()
+                if ($counts.ContainsKey($val)) { $counts[$val] += 1 }
+            }
+        }
+    }
+
+    [PSCustomObject]@{
+        Name      = [System.IO.Path]::GetFileName($Path)
+        ERROR     = $counts['ERROR']
+        FAILED    = $counts['FAILED']
+        DENIED    = $counts['DENIED']
+        TOTALHITS = ($counts.Values | Measure-Object -Sum).Sum
+    }
+}
+
 #Find all configfiles
 Get-ChildItem -Path 'network_configs' -Recurse -File |
 Where-Object { $_.Extension -in '.conf', '.rules', '.log' } |
@@ -101,3 +131,9 @@ ForEach-Object { foreach ($m in $_.Matches) { $m.Value } } |
 Sort-Object -Unique |
 ForEach-Object { [PSCustomObject]@{ Unique_IP_Adresses = $_ } } |
 Export-Csv -Path .\5_unique_ipadresses.csv -NoTypeInformation -Encoding UTF8
+
+#Count securityproblems
+Get-ChildItem -Path 'network_configs' -Recurse -File -Filter '*.log' |
+ForEach-Object { Get-KeywordInFile -Path $_.Fullname } |
+Sort-Object TotalHits -Descending |
+Export-Csv -Path .\6_security_problem_counts.csv -NoTypeInformation -Encoding UTF8
