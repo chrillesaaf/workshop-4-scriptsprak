@@ -1,15 +1,16 @@
 $now = Get-Date "2024-10-14 23:59:59"
 $weekAgo = $now.AddDays(-7)
 $regex = '\b(20\d{2}-\d{2}-\d{2})(?:\s+([0-2]\d:[0-5]\d(?::[0-5]\d)?))?\b'
+$ipv4regex = '\b(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)(?:\.(?!$)|$)){4}\b'
 
 #Function to get parsed date from file
 function Get-ParsedDateFromFile {
     param([string]$Path)
 
-    $matches = Select-String -Path $Path -Pattern $regex -AllMatches -ErrorAction SilentlyContinue
-    if (-not $matches) { return $null }
+    $getdates = Select-String -Path $Path -Pattern $regex -AllMatches -ErrorAction SilentlyContinue
+    if (-not $getdates) { return $null }
 
-    $parsedDates = foreach ($hit in $matches) {
+    $parsedDates = foreach ($hit in $getdates) {
         foreach ($m in $hit.Matches) {
             $txt = $m.Value
             foreach ($fmt in @('yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd HH:mm', 'yyyy-MM-dd')) {
@@ -91,3 +92,12 @@ ForEach-Object {
 Sort-Object SizeMB -Descending |
 Select-Object -First 5 Name, SizeKB, SizeMB, ParsedDate |
 Export-Csv -Path .\4_top5_logfiles.csv -NoTypeInformation -Encoding UTF8
+
+#List with unique IP-adresses
+Get-ChildItem -Path 'network_configs' -Recurse -File |
+Where-Object { $_.Extension -ieq '.conf' } |
+Select-String -Pattern $ipv4regex -AllMatches |
+ForEach-Object { foreach ($m in $_.Matches) { $m.Value } } |
+Sort-Object -Unique |
+ForEach-Object { [PSCustomObject]@{ Unique_IP_Adresses = $_ } } |
+Export-Csv -Path .\5_unique_ipadresses.csv -NoTypeInformation -Encoding UTF8
