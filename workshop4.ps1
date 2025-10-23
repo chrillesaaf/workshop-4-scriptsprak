@@ -56,6 +56,55 @@ function Get-KeywordInFile {
     }
 }
 
+function Find-SecurityIssues {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string[]]$FileExtensions = @('*'),
+        [switch]$IncludeContext
+    )
+
+    $patterns = @{
+        ClearTextSecret = '(?i)\b(password|secret)\b\s*[:=]\s*["'']?([^\s""'']+)'
+        SNMPCommunity   = '(?i)\b(public|private)\b'
+        EnablePassword  = '(?i)\benable\s+password\s+([^\s]+)'
+    }
+
+
+    $files = Get-ChildItem -Path $Path -Recurse -File | 
+    Where-Object {
+        $FileExtensions -contains '*' -or
+        $FileExtensions -contains $_.Extension.ToLower()
+    }
+    
+    foreach ($f in $files) {
+        # use Select-String once per pattern to keep memory predictable
+        foreach ($key in $patterns.Keys) {
+            $pat = $patterns[$key]
+            $matcheserrors = Select-String -Path $f.FullName -Pattern $pat -AllMatches -ErrorAction SilentlyContinue
+            if ($matcheserrors) {
+                foreach ($mi in $matcheserrors) {
+                    foreach ($m in $mi.Matches) {
+                        $matchText = $m.Value.Trim()
+                        $capture = $null 
+                        if ($m.Groups.Count -gt 1) {
+                            $capture = $m.Groups[1].Value
+                        }
+                        [PSCustomObject]@{
+                            Name       = $f.Name
+                            IssueType  = $key
+                            Match      = $matchText
+                            Captured   = if ($capture) { $capture } else { $null }
+                            LineNumber = $mi.LineNumber
+                            LineText   = if ($IncludeContext) { $mi.Line.Trim() } else { $null }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #Find all configfiles
 Get-ChildItem -Path 'network_configs' -Recurse -File |
 Where-Object { $_.Extension -in '.conf', '.rules', '.log' } |
@@ -153,3 +202,6 @@ ForEach-Object {
 } |
 Where-Object { $_.ParsedDate -and ($_.ParsedDate -ge $weekAgo) -and ($_.ParsedDate -le $now) } |
 Export-Csv -Path .\7_config_inventory.csv -NoTypeInformation -Encoding UTF8
+
+Find-SecurityIssues -Path 'network_configs' -IncludeContext |
+Export-Csv -Path .\8_security_issues.csv -NoTypeInformation -Encoding UTF8
