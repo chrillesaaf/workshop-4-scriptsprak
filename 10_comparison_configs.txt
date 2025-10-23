@@ -1,0 +1,24 @@
+﻿---- Baseline Comparison Report ----
+
+RT-EDGE-01.conf: Differences found
+  [Missing from config] service password-encryption
+  [Missing from config] snmp-server community [COMPLEX-STRING] RO
+  [Missing from config] logging host [SYSLOG-SERVER]
+  [Missing from config] ntp server [NTP-SERVER]
+  [Missing from config] Authorized access only. All activity is monitored.
+
+RT-EDGE-02.conf: Differences found
+  [Missing from config] service password-encryption
+  [Missing from config] snmp-server community [COMPLEX-STRING] RO
+  [Missing from config] logging host [SYSLOG-SERVER]
+  [Missing from config] logging trap warnings
+  [Missing from config] ntp server [NTP-SERVER]
+  [Missing from config] Authorized access only. All activity is monitored.
+
+RT-LAGER-01.conf: Differences found
+  [Missing from config] service password-encryption
+  [Missing from config] snmp-server community [COMPLEX-STRING] RO
+  [Missing from config] logging host [SYSLOG-SERVER]
+  [Missing from config] logging trap warnings
+  [Missing from config] ntp server [NTP-SERVER]
+  [Missing from config] Authorized access only. All activity is monitored.

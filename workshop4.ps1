@@ -3,6 +3,7 @@ $weekAgo = $now.AddDays(-7)
 $regex = '\b(20\d{2}-\d{2}-\d{2})(?:\s+([0-2]\d:[0-5]\d(?::[0-5]\d)?))?\b'
 $ipv4regex = '\b(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)(?:\.(?!$)|$)){4}\b'
 $BackupPath = 'network_configs\backups'
+$BaselineFile = Join-Path -Path $PSScriptRoot -ChildPath 'network_configs\baseline\baseline-router.conf'
 
 #Function to get parsed date from file
 function Get-ParsedDateFromFile {
@@ -155,6 +156,66 @@ function AuditReport {
     }
     return $report
 }
+
+function CompareConfigs {
+    param(
+        [Parameter(Mandatory)][string]$ConfigFolder,
+        [Parameter(Mandatory)][string]$BaselineFileRelativePath
+    )
+    $BaselineFile = Join-Path -Path $PSScriptRoot -ChildPath $BaselineFileRelativePath
+
+    if (-not (Test-Path $BaselineFile)) {
+        Write-Error "Baseline file not found: $BaselineFile"
+        return
+    }
+    $baselineContent = Get-Content -Path $BaselineFile -Encoding UTF8 | 
+    Where-Object {
+        ($words = $_.Trim()) -and
+        $words -notmatch '^(#|!)' -and
+        $words -match 'aaa|tacacs|radius|enable secret|service password-encryption|username|privilege|access-list|firewall|crypto|ipsec|certificate|key|ssh|snmp|ntp|logging|security|auth|password|vpn|snmp-server community|transport input ssh'
+    } | ForEach-Object { $_ }
+
+    if (-not $baselineContent) {
+        Write-Error "Baseline file is empty or invalid."
+        return
+    }
+
+    $report = @()
+    $report += "---- Baseline Comparison Report ----"
+
+    $configFiles = Get-ChildItem -Path $ConfigFolder -Recurse -File |
+    Where-Object { $_.Extension -in '.conf', '.rules' }
+
+    foreach ($file in $configFiles) {
+        $currentContent = Get-Content -Path $file.FullName -Encoding UTF8 | 
+        Where-Object {
+            ($words = $_.Trim()) -and
+            $words -notmatch '^(#|!)' -and
+            $words -match 'aaa|tacacs|radius|enable secret|service password-encryption|username|privilege|access-list|firewall|crypto|ipsec|certificate|key|ssh|snmp|ntp|logging|security|auth|password|vpn|snmp-server community|transport input ssh'
+        } | ForEach-Object { $_ }
+
+        if (-not $currentContent) {
+            $report += "`n$($file.Name): Skipped (empty or unreadable)"
+            continue
+        }
+
+        $differences = Compare-Object -ReferenceObject $baselineContent -DifferenceObject $currentContent -IncludeEqual:$false | 
+        Where-Object { $_.SideIndicator -eq '<=' }
+
+        if ($differences) {
+            $report += "`n$($file.Name): Differences found"
+            foreach ($diff in $differences) {
+                $side = 'Missing from config'
+                $report += "  [$side] $($diff.InputObject)"
+            }
+        }
+        else {
+            $report += "`n$($file.Name): No differences"
+        }
+    }
+
+    return $report
+}
 #Find all configfiles
 Get-ChildItem -Path 'network_configs' -Recurse -File |
 Where-Object { $_.Extension -in '.conf', '.rules', '.log' } |
@@ -259,3 +320,7 @@ Export-Csv -Path .\8_security_issues.csv -NoTypeInformation -Encoding UTF8
 #Generate Auditreport
 $reportContent = AuditReport -LogPath 'network_configs' -BackupPath 'network_configs\backups'
 $reportContent | Set-Content -Path '.\security_audit.txt' -Encoding UTF8
+
+#Generate Comparion configfiles
+$reportContent = CompareConfigs -ConfigFolder 'network_configs\routers' -BaselineFileRelativePath 'network_configs\baseline\baseline-router.conf'
+$reportContent | Set-Content -Path '.\10_comparison_configs.txt' -Encoding UTF8
