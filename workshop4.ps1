@@ -2,6 +2,7 @@ $now = Get-Date "2024-10-14 23:59:59"
 $weekAgo = $now.AddDays(-7)
 $regex = '\b(20\d{2}-\d{2}-\d{2})(?:\s+([0-2]\d:[0-5]\d(?::[0-5]\d)?))?\b'
 $ipv4regex = '\b(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)(?:\.(?!$)|$)){4}\b'
+$BackupPath = 'network_configs\backups'
 
 #Function to get parsed date from file
 function Get-ParsedDateFromFile {
@@ -67,7 +68,7 @@ function Find-SecurityIssues {
     $patterns = @{
         ClearTextSecret = '(?i)\b(password|secret)\b\s*[:=]\s*["'']?([^\s""'']+)'
         SNMPCommunity   = '(?i)\b(public|private)\b'
-        EnablePassword  = '(?i)\benable\s+password\s+([^\s]+)'
+        EnablePassword  = '(?i)(enable\s+password)\s+([^\s]+)'
     }
 
 
@@ -85,18 +86,15 @@ function Find-SecurityIssues {
             if ($matcheserrors) {
                 foreach ($mi in $matcheserrors) {
                     foreach ($m in $mi.Matches) {
-                        $matchText = $m.Value.Trim()
-                        $capture = $null 
-                        if ($m.Groups.Count -gt 1) {
-                            $capture = $m.Groups[1].Value
-                        }
+                        $matchText = if ($m.Groups.Count -gt 1) { $m.Groups[1].Value.Trim() } else { $m.Value.Trim() }
+                        $capture = if ($m.Groups.Count -gt 2) { $m.Groups[2].Value.Trim() } else { $null }
                         [PSCustomObject]@{
-                            Name       = $f.Name
-                            IssueType  = $key
-                            Match      = $matchText
-                            Captured   = if ($capture) { $capture } else { $null }
-                            LineNumber = $mi.LineNumber
-                            LineText   = if ($IncludeContext) { $mi.Line.Trim() } else { $null }
+                            Name      = $f.Name
+                            IssueType = $key
+                            Match     = $matchText
+                            Captured  = if ($capture) { $capture } else { $null }
+                            Line      = $mi.LineNumber
+                            LineText  = if ($IncludeContext) { $mi.Line.Trim() } else { $null }
                         }
                     }
                 }
@@ -105,6 +103,58 @@ function Find-SecurityIssues {
     }
 }
 
+#Function to generate auditreport
+function AuditReport {
+    param(
+        [Parameter(Mandatory)][string]$LogPath,
+        [Parameter(Mandatory)][string]$BackupPath
+    )
+
+    $logFiles = Get-ChildItem -Path $LogPath -Recurse -File -Filter '*.log'
+
+    $report = @()
+    $report += "----ERROR SUMMARY----"
+    foreach ($file in $logFiles) {
+        $errors = Select-String -Path $file.Fullname -Pattern '(?i)\bERROR\b' -ErrorAction SilentlyContinue
+        if ($errors) {
+            $report += "`n$file"
+            $report += ($errors | ForEach-Object { "  Line $($_.LineNumber): $($_.Line.Trim())" })
+        }
+    }
+    $report += "`n`n----Failed Logins----"
+    foreach ($file in $logFiles) {
+        $failed = Select-String -Path $file.FullName -Pattern '(?i)\bFAILED\b' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Line -match 'Authentication failed' }
+        if ($failed) {
+            $report += "`n$file"
+            $report += ($failed | ForEach-Object { "  Line $($_.LineNumber): $($_.Line.Trim())" })
+        }
+    }
+    $report += "`n`n----Weak Configuration Warnings----"
+    $weakPatterns = '(?i)weak password|unauthorized SNMP|SQL injection|enable password'
+    foreach ($file in $logFiles) {
+        $weak = Select-String -Path $file.FullName -Pattern $weakPatterns -ErrorAction SilentlyContinue
+        if ($weak) {
+            $report += "`n$file"
+            $report += ($weak | ForEach-Object { "  Line $($_.LineNumber): $($_.Line.Trim())" })
+        }
+    }
+    $report += "`n`n----Files Missing Backup----"
+    $configFiles = Get-ChildItem -Path $LogPath -Recurse -File |
+    Where-Object { $_.Extension -in '.conf', '.rules' }
+    $backupFiles = Get-ChildItem -Path $BackupPath -Recurse -File |
+    Where-Object { $_.Name -match '\.bak$' } |
+    ForEach-Object {
+        $_.Name -replace '\.bak$', ''
+    }
+
+    foreach ($cfg in $configFiles) {
+        if (-not ($backupFiles -contains $cfg.Name)) {
+            $report += "  $($cfg.Name) (no backup found)"
+        }
+    }
+    return $report
+}
 #Find all configfiles
 Get-ChildItem -Path 'network_configs' -Recurse -File |
 Where-Object { $_.Extension -in '.conf', '.rules', '.log' } |
@@ -205,3 +255,7 @@ Export-Csv -Path .\7_config_inventory.csv -NoTypeInformation -Encoding UTF8
 
 Find-SecurityIssues -Path 'network_configs' -IncludeContext |
 Export-Csv -Path .\8_security_issues.csv -NoTypeInformation -Encoding UTF8
+
+#Generate Auditreport
+$reportContent = AuditReport -LogPath 'network_configs' -BackupPath 'network_configs\backups'
+$reportContent | Set-Content -Path '.\security_audit.txt' -Encoding UTF8
