@@ -4,7 +4,7 @@ $regex = '\b(20\d{2}-\d{2}-\d{2})(?:\s+([0-2]\d:[0-5]\d(?::[0-5]\d)?))?\b'
 $ipv4regex = '\b(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)(?:\.(?!$)|$)){4}\b'
 $BackupPath = 'network_configs\backups'
 $BaselineFile = Join-Path -Path $PSScriptRoot -ChildPath 'network_configs\baseline\baseline-router.conf'
-
+#======================================================================================================================================================================
 #Function to get parsed date from file
 function Get-ParsedDateFromFile {
     param([string]$Path)
@@ -28,6 +28,7 @@ function Get-ParsedDateFromFile {
 
     if ($parsedDates) { $parsedDates | Sort-Object -Descending | Select-Object -First 1 } else { $null }
 }
+#======================================================================================================================================================================
 #Function to count keywords in files
 function Get-KeywordInFile {
     param(
@@ -57,7 +58,8 @@ function Get-KeywordInFile {
         TOTALHITS = ($counts.Values | Measure-Object -Sum).Sum
     }
 }
-
+#======================================================================================================================================================================
+#Function to find securityissues
 function Find-SecurityIssues {
     [CmdletBinding()]
     param(
@@ -80,7 +82,6 @@ function Find-SecurityIssues {
     }
     
     foreach ($f in $files) {
-        # use Select-String once per pattern to keep memory predictable
         foreach ($key in $patterns.Keys) {
             $pat = $patterns[$key]
             $matcheserrors = Select-String -Path $f.FullName -Pattern $pat -AllMatches -ErrorAction SilentlyContinue
@@ -103,7 +104,7 @@ function Find-SecurityIssues {
         }
     }
 }
-
+#======================================================================================================================================================================
 #Function to generate auditreport
 function AuditReport {
     param(
@@ -156,7 +157,8 @@ function AuditReport {
     }
     return $report
 }
-
+#======================================================================================================================================================================
+#Function to compare configurations
 function CompareConfigs {
     param(
         [Parameter(Mandatory)][string]$ConfigFolder,
@@ -216,6 +218,7 @@ function CompareConfigs {
 
     return $report
 }
+#======================================================================================================================================================================
 #Find all configfiles
 Get-ChildItem -Path 'network_configs' -Recurse -File |
 Where-Object { $_.Extension -in '.conf', '.rules', '.log' } |
@@ -231,7 +234,7 @@ ForEach-Object {
 Where-Object { $_.ParsedDate -and ($_.ParsedDate -ge $weekAgo) -and ($_.ParsedDate -le $now) } |
 Sort-Object ParsedDate -Descending |
 Export-Csv -Path .\1_config_files.csv -NoTypeInformation -Encoding UTF8
-
+#======================================================================================================================================================================
 #Find files that last changed
 Get-ChildItem -Path 'network_configs' -Recurse -File |
 Where-Object { $_.Extension -in '.conf', '.rules', '.log', '.bak' } |
@@ -251,7 +254,7 @@ Where-Object { $_.ParsedDate -and ($_.ParsedDate -ge $weekAgo) -and ($_.ParsedDa
 Sort-Object ParsedDate -Descending |
 Select-Object Name, SizeKB, ParsedDate |
 Export-Csv -Path .\2_last_changed_files.csv -NoTypeInformation -Encoding UTF8
-
+#======================================================================================================================================================================
 #Group files after type
 Get-ChildItem -Path 'network_configs' -Recurse -File |
 Where-Object { $_.Extension -in '.conf', '.rules', '.log', '.bak' } |
@@ -265,7 +268,7 @@ Select-Object @{
 } |
 Sort-Object FileCount -Descending |
 Export-Csv -Path .\3_group_files_after_type.csv -NoTypeInformation -Encoding UTF8
-
+#======================================================================================================================================================================
 #Five biggest logfiles in MB
 Get-ChildItem -Path 'network_configs' -Recurse -File |
 Where-Object { $_.Extension -ieq '.log' } |
@@ -282,22 +285,23 @@ ForEach-Object {
 Sort-Object SizeMB -Descending |
 Select-Object -First 5 Name, SizeKB, SizeMB, ParsedDate |
 Export-Csv -Path .\4_top5_logfiles.csv -NoTypeInformation -Encoding UTF8
-
+#======================================================================================================================================================================
 #List with unique IP-adresses
 Get-ChildItem -Path 'network_configs' -Recurse -File |
 Where-Object { $_.Extension -ieq '.conf' } |
 Select-String -Pattern $ipv4regex -AllMatches |
 ForEach-Object { foreach ($m in $_.Matches) { $m.Value } } |
 Sort-Object -Unique |
+Where-Object { -not $_.StartsWith('255') } |
 ForEach-Object { [PSCustomObject]@{ Unique_IP_Adresses = $_ } } |
 Export-Csv -Path .\5_unique_ipadresses.csv -NoTypeInformation -Encoding UTF8
-
+#======================================================================================================================================================================
 #Count securityproblems
 Get-ChildItem -Path 'network_configs' -Recurse -File -Filter '*.log' |
 ForEach-Object { Get-KeywordInFile -Path $_.Fullname } |
 Sort-Object TotalHits -Descending |
 Export-Csv -Path .\6_security_problem_counts.csv -NoTypeInformation -Encoding UTF8
-
+#======================================================================================================================================================================
 #Export fileinventory
 Get-ChildItem -Path 'network_configs' -Recurse -File |
 Where-Object { $_.Extension -in '.conf', '.rules' } |
@@ -313,14 +317,15 @@ ForEach-Object {
 } |
 Where-Object { $_.ParsedDate -and ($_.ParsedDate -ge $weekAgo) -and ($_.ParsedDate -le $now) } |
 Export-Csv -Path .\7_config_inventory.csv -NoTypeInformation -Encoding UTF8
-
+#======================================================================================================================================================================
+#Generate Securityissues CSV
 Find-SecurityIssues -Path 'network_configs' -IncludeContext |
 Export-Csv -Path .\8_security_issues.csv -NoTypeInformation -Encoding UTF8
-
+#======================================================================================================================================================================
 #Generate Auditreport
 $reportContent = AuditReport -LogPath 'network_configs' -BackupPath 'network_configs\backups'
 $reportContent | Set-Content -Path '.\security_audit.txt' -Encoding UTF8
-
+#======================================================================================================================================================================
 #Generate Comparion configfiles
 $reportContent = CompareConfigs -ConfigFolder 'network_configs\routers' -BaselineFileRelativePath 'network_configs\baseline\baseline-router.conf'
 $reportContent | Set-Content -Path '.\10_comparison_configs.txt' -Encoding UTF8
